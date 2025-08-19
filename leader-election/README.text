@@ -1,0 +1,9 @@
+To run, follow below steps:
+1. cd leader-election
+1. mvn clean package ==> Will create jar file in target directory
+2. jar -jar target/leader-election-1.0-SNAPSHOT-jar-with-dependencies.jar
+
+Pre-requisites:
+1. Zookeeper should be installed.
+2. run zkServer.cmd to start zookeeper. 
+3. run zkCli.cmd to start zookeeper client and run 'create /election "test data"'
