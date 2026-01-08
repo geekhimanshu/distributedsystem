@@ -1,0 +1,183 @@
+#MONGO DB CHEATSHEET
+
+
+##Commands
+
+###List all dbs
+show dbs
+
+###Create and switch to a new db
+use online_school
+
+###List all the collections (table)
+show collections
+
+###Create a new collection
+db.createCollection("physics")
+
+###Create collection student and insert one row with default id:
+db.students.insertOne( {"name" : "Himanshu", "age" : 25, "favorite_colors" : ["blue", "yellow"]} )
+
+###Create collection student and insert one row with custom id:
+db.students.insertOne( {"_id" : "777", "name" : "Rompy", "age" : 25, "favorite_colors" : ["blue", "yellow"]} )
+
+###List all the collections (rows) in student (table)
+db.students.find()
+db.students.find().pretty()
+
+###List filtered collections
+db.students.find({ "name" : "Rompy" })
+db.students.find({ "age" : {$gt : 30} })
+
+###Limit queries
+db.students.find({ "age" : {$lt : 30} }).limit(1)
+
+###Update queries
+db.students.updateOne( { "name" : "Himanshu" }, { $set : { "age" : 32 }} ) 
+
+###Create an index on id
+db.students.createIndex( { _id : "hashed" } ) 
+
+##Architecture
+
+### MongoDB by default follows master slave architecture. Primary takes all the write and read requests.
+
+###Write concern: All the write operations are directed to the primary.
+
+No. of nodes to be synced before sending write acknowledgement.
+db.students.insert(
+	{ name : "Anton", age : 23 ...
+	{ writeConcern: { w : 2, wtimeout : 5000 } }
+	
+Majority of nodes to be synced regardless of the cluster size.
+db.students.insert(
+	{ name : "Anton", age : 23 ...
+	{ writeConcern: { w : "majority" ... } }
+	
+###Read concern: All the read operations are directed to the primary to guarantee strict consistency. If the primary is unavailable, we can still read from the secondary nodes using read concern.
+
+Read concern set to prefer primary:
+db.students.find({...}).readPref(
+	{ "primaryPreferred" }
+)
+
+If the no. of reads are too much and we are fine with eventual consistency:
+db.students.find({...}).readPref(
+	{ "secondary" }
+)
+
+Read from the node to have the lowest latency from the cloud:
+db.students.find({...}).readPref(
+	{ "nearest" }
+)
+
+
+##MongoDB Sharding Strategy
+
+###Hash based sharding strategy
+Consecutive key values may be hashed to different chunks.
+
+###Range based sharding strategy
+Chunk is decided on the basis of the range where document key falls into.
+
+##How sharding works ?
+1. If chunk size exceeds certain threshold, it is broken down into smaller chunks.
+2. If mongo db detects an uneven distribution of chunks among their shards, their load is balanced through chunk migration from one shard to another shard.
+3. If any application wants to query the shards, it connects to router(mongos) which routes the requests to respective shards. Router routes the queries based on the information provided by the config server (mongod). 
+4. Config server is also a critical component and should be run as a replication set. Each shard should also be run as a replication set.
+5. An index is a pre-requisite to shard a collection on a given key.
+6. sh.shardCollection("videdb.movies", { name : 1 } ) ==> will create a range based shard on the basis of name for collection movies.
+7. sh.status() ==> Will give sharding information for all our databases.
+
+###If there are hotspots while reading from some of the specific shards, we can set the readPref as secondary. This will spread out load to all the secondary replication sets.
+db.movies.find({...}).readPref({"secondaryPreferred"})
+
+
+##Setting Up the MongoDB Sharded Cluster
+
+1) Create the local directories for each config server:
+mkdir -p /usr/local/var/mongodb/config-srv-0
+mkdir -p /usr/local/var/mongodb/config-srv-1
+mkdir -p /usr/local/var/mongodb/config-srv-2
+
+2) Launch 3 config servers as part of the same replication set:
+mongod --configsvr --replSet config-rs --dbpath /usr/local/var/mongodb/config-srv-0 --bind_ip 127.0.0.1 --port 27020
+mongod --configsvr --replSet config-rs --dbpath /usr/local/var/mongodb/config-srv-1 --bind_ip 127.0.0.1 --port 27021
+mongod --configsvr --replSet config-rs --dbpath /usr/local/var/mongodb/config-srv-2 --bind_ip 127.0.0.1 --port 27022
+
+3) Connect to one of the config servers using mongosh (the new version of mongo client):
+mongosh --port 27020
+
+4) Initiate the config server replication set:
+rs.initiate(
+   {
+      _id: "config-rs",
+      configsvr: true,
+      version: 1,
+      members: [
+         { _id: 0, host : "127.0.0.1:27020" },
+         { _id: 1, host : "127.0.0.1:27021" },
+         { _id: 2, host : "127.0.0.1:27022" }
+      ]
+   }
+)
+
+
+5) Create the directories for each shard:
+mkdir -p /usr/local/var/mongodb/shard-0
+mkdir -p /usr/local/var/mongodb/shard-1
+
+6) Launching 2 standalone shards.
+Note: With the new version of MongoDB, each shard has to be part of a replication set.
+mongod --shardsvr --replSet rs0 --port 27017 --bind_ip 127.0.0.1 --dbpath /opt/homebrew/var/mongodb/shard-0/ --oplogSize 128
+mongod --shardsvr --replSet rs1 --port 27018 --bind_ip 127.0.0.1 --dbpath /opt/homebrew/var/mongodb/shard-1/ --oplogSize 128
+Notice that shard-0 is part of the replication set rs0, and shard-1 is part of the replication set rs1
+
+7) Initialize the replication set of each shard:
+mongosh --host 127.0.0.1 --port 27017
+rs.initiate(
+   {
+      _id: "rs0",
+      version: 1,
+      members: [
+         { _id: 0, host : "127.0.0.1:27017" }  
+      ]
+   }
+)
+
+mongosh --host 127.0.0.1 --port 27018`
+rs.initiate(
+   {
+      _id: "rs1",
+      version: 1,
+      members: [
+         { _id: 0, host : "127.0.0.1:27018" }  
+      ]
+   }
+)
+
+8) Launch mongos (router) and connect it to the config servers:
+mongos --configdb config-rs/127.0.0.1:27020,127.0.0.1:27021,127.0.0.1:27022 --bind_ip 127.0.0.1 --port 27023
+
+9) Connect to mongos and add the 2 shards to it:
+mongo --port 27023
+sh.addShard( "rs0/127.0.0.1:27017")
+sh.addShard( "rs1/127.0.0.1:27018")
+
+
+##To Shard a Collection
+
+1) Update chunk size in the config database:
+mongo --port 27023
+use config
+db.settings.updateOne({_id:"chunksize"}, {$set: {_id: "chunksize", value: 1}}, {upsert: true})
+
+2) Enable sharding of the videodb database:
+use videodb
+sh.enableSharding("videodb")
+
+3) Create an index, for example:
+db.movies.createIndex({name: 1})
+
+4) Shard the collection based on that index:
+sh.shardCollection("videodb.movies", {name : 1})
