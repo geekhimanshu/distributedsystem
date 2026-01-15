@@ -1,6 +1,5 @@
 # KAFKA
 
-
 ## Key component and terms
 
 ### Producer
@@ -170,3 +169,6 @@ bin/windows/kafka-consumer-groups.bat --bootstrap-server localhost:9092 --descri
 ### Create a kafka Producer
 1. By default, kafka will send message asynchronously i.e. fire and forget. We can't know if the message is delivered to the broker successfully.
 2. If we configure kafka to send message synchronously, then we can know if the message is delivered to the broker successfully.
+
+### Practice
+See modules dispatch and track.
