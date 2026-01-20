@@ -1,5 +1,6 @@
 package com.himanshu.track.service;
 
+import com.himanshu.track.message.DispatchCompleted;
 import com.himanshu.track.message.DispatchPreparing;
 import com.himanshu.track.message.TrackingStatusUpdated;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,13 @@ public class OrderTrackingService {
     public void process(DispatchPreparing dispatchPreparing) throws ExecutionException, InterruptedException {
         TrackingStatusUpdated statusUpdated = TrackingStatusUpdated.builder()
                 .orderId(dispatchPreparing.getOrderId())
+                .status("DELIVERED").build();
+        kafkaProducer.send(TRACKING_STATUS_TOPIC, statusUpdated).get();
+    }
+
+    public void process(DispatchCompleted dispatchCompleted) throws ExecutionException, InterruptedException {
+        TrackingStatusUpdated statusUpdated = TrackingStatusUpdated.builder()
+                .orderId(dispatchCompleted.getOrderId())
                 .status("DELIVERED").build();
         kafkaProducer.send(TRACKING_STATUS_TOPIC, statusUpdated).get();
     }

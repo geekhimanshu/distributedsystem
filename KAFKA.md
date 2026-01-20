@@ -60,8 +60,10 @@ Key value pairs.
 1. Optional.
 2. By default, it is null.
 3. Facilitates guaranteed ordering.
-4. A message with the same key is guaranteed to be consumed by the same consumer.
-5. If a message is written to a topic without a message key, and the partition to write to is not specified, then there is no guarantee which partition it will be written to.
+4. A message with the same key is written to the same partition. Kafka uses hash of the key to do this.
+5. Hence, a message with the same key is guaranteed to be consumed by the same consumer because it is written to the same partition.
+6. If a message is written to a topic without a message key, and the partition to write to is not specified, then there is no guarantee which partition it will be written to.
+
 
 ## Apache Zookeeper
 
@@ -113,8 +115,16 @@ bin/windows/kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic
 ### Start kafka console Consumer with some specific consumer group
 bin/windows/kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic my.first.topic --group my.new.group 
 
+### Start kafka console Consumer so that it will print message key
+bin/windows/kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic my.first.topic --property print-key=true --property key-separator=: 
+==> It didn't work for me on windows
+
 ### Start kafka console Producer
 bin/windows/kafka-console-producer.bat --bootstrap-server localhost:9092 --topic my.first.topic
+
+### Start console producer to print a key:
+bin/windows/kafka-console-producer.bat --bootstrap-server localhost:9092 --topic my.first.topic --property parse.key=true --property key-separator=: 
+==> It didn't work for me on windows
 
 ### List kafka topics
 bin/windows/kafka-topics.bat --bootstrap-server localhost:9092 --list
@@ -170,5 +180,46 @@ bin/windows/kafka-consumer-groups.bat --bootstrap-server localhost:9092 --descri
 1. By default, kafka will send message asynchronously i.e. fire and forget. We can't know if the message is delivered to the broker successfully.
 2. If we configure kafka to send message synchronously, then we can know if the message is delivered to the broker successfully.
 
+## scaling
+1. A partitioned can be assigned to only one consumer.
+2. We can only scale to as many consumers as we have partitions.
+
+## Fault Tolerance
+
+### Heartbeat mechanism
+1. Heartbeat mechanism keeps the broker aware of the consumer.
+2. At certain intervals, consumer will send a hearbeat to the broker, indicating it is still alive.
+3. Response from the broker confirms to the consumer that the broker is still available.
+4. Even if the broker receives heartbeat but the consumer is not polling, the consumer is assumed unhealthy and let go.
+5. There is a tolerance build up in the hearbeat mechanism so that issues such as network glitches are survivable.
+
+### Rebalancing
+1. Loss of consumer will lead to Rebalancing.
+2. It means broker will redistribute the partition belonging to lost consumer to active consumer.
+3. Similarly addition of consumer might also lead to rebalancing and it will be allocated one or more partitions.
+4. During rebalancing, there is a pause in the processing of the messages from the partitions the consumer was assigned until they are reassigned.
+5. Hence rebalancing impacts the performance of the system if it happens too often.
+
+### Listening multiple event types from the same Topic
+1. By keeping @KafkaListener at the class level, we can consume multiple event types from the same topic.
+2. We just need to annotate each of the overloaded (with different event types) listener methods with @KafkaHandler.
+3. If an unknown event is received from a topic, then the ListenerExecutionFailedException will be thrown and polling will continue for the next message.
+4. Spring kafka will need to know how to deserialize different event types. 
+
+### Configuring retryable and non retryable exception with Dead Letter Queue
+We can set it by creating a DefaultErrorHandler with backoff of 100ms and retry count 3 and adding retryable and non-retryable exception to it.  Then set this DefaultErrorHandler to ConcurrentKafkaListenerContainerFactory.
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(ConsumerFactory<String, Object> consumerFactory) {
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new FixedBackOff(100L, 3L));
+        errorHandler.addRetryableExceptions(RetryableException.class);
+        errorHandler.addNotRetryableExceptions(NotRetryableException.class);
+        factory.setCommonErrorHandler(errorHandler);
+        return factory;
+    }
+See module dispatch.DLT for details.
+
 ### Practice
 See modules dispatch and track.
+
