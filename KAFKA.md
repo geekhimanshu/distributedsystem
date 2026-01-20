@@ -218,6 +218,9 @@ We can set it by creating a DefaultErrorHandler with backoff of 100ms and retry 
         factory.setCommonErrorHandler(errorHandler);
         return factory;
     }
+Similary, dead letter queue is also configured with errorHandler:
+DefaultErrorHandler errorHandler = new DefaultErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate), new FixedBackOff(100L, 3L));
+
 See module dispatch.DLT for details.
 
 ### Practice
